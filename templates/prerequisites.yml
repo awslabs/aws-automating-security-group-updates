@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC, Launch Configuration, and ASG for Automating Security Groups with Lifecycle Hooks Blog Post
+Mappings:
+  RegionalMap:
+    us-east-1:
+      '64': ami-a4c7edb2
+    us-east-2:
+      '64': ami-8a7859ef
+    us-west-2:
+      '64': ami-6df1e514
+    us-west-1:
+      '64': ami-327f5352
+    ca-central-1:
+      '64': ami-a7aa15c3
+    eu-west-1:
+      '64': ami-d7b9a2b1
+    eu-west-2:
+      '64': ami-ed100689
+    eu-central-1:
+      '64': ami-82be18ed
+    ap-southeast-1:
+      '64': ami-77af2014
+    ap-northeast-2:
+      '64': ami-e21cc38c
+    ap-northeast-1:
+      '64': ami-3bd3c45c
+    ap-southeast-2:
+      '64': ami-10918173
+    ap-south-1:
+      '64': ami-47205e28
+Outputs:
+  AutoScalingGroupName:
+    Description: Name of the Auto Scaling Group
+    Value: !Ref AutoScalingGroup
+  SecurityGroupID:
+    Description: ID of the Security Group
+    Value: !GetAtt SecurityGroup.GroupId
+Resources:
+  GatewayToInternet:
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+    Type: AWS::EC2::VPCGatewayAttachment
+  SecurityGroup:
+    Properties:
+      GroupDescription: Web Instance Security Group
+      GroupName: automating-sg
+      VpcId: !Ref VPC
+    Type: AWS::EC2::SecurityGroup
+  SecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties: 
+      FromPort: '443'
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref SecurityGroup
+      ToPort: '443'
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  PublicRoute:
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+    Type: AWS::EC2::Route
+    DependsOn: GatewayToInternet
+  PublicRouteTable:
+    Properties:
+      VpcId: !Ref VPC
+    Type: AWS::EC2::RouteTable
+  PublicSubnet1:
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - '0'
+        - Fn::GetAZs: ''
+      CidrBlock: 10.0.0.128/28
+      VpcId: !Ref VPC
+    Type: AWS::EC2::Subnet
+  PublicSubnet1RouteTableAssociation:
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  PublicSubnet2:
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - '1'
+        - Fn::GetAZs: ''
+      CidrBlock: 10.0.128.0/24
+      VpcId: !Ref VPC
+    Type: AWS::EC2::Subnet
+  PublicSubnet2RouteTableAssociation:
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  VPC:
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+      - Key: Name
+        Value: AutomatingSGs
+    Type: AWS::EC2::VPC
+  AutoScalingGroup:
+    Properties:
+      AvailabilityZones:
+      - Fn::Select:
+        - '0'
+        - Fn::GetAZs: ''
+      - Fn::Select:
+        - '1'
+        - Fn::GetAZs: ''
+      MaxSize: '2'
+      MinSize: '0'
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      VPCZoneIdentifier:
+      - !Ref PublicSubnet1
+      - !Ref PublicSubnet2
+    Type: AWS::AutoScaling::AutoScalingGroup
+  LaunchConfiguration:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Properties:
+      AssociatePublicIpAddress: True
+      ImageId:
+        Fn::FindInMap:
+        - RegionalMap
+        - Ref: AWS::Region
+        - '64'
+      InstanceType: t2.micro
+      SecurityGroups:
+        - !Ref SecurityGroup

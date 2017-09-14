@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  CodeBucket:
+    Type: String
+    Description: Bucket name where code is located
+    Default: isco-ohio
+  CodeKey:
+    Type: String
+    Description: Key name (including all prefixes) of code zip
+    Default: auto-sg-updater.zip
+  AutoScalingGroup:
+    Type: String
+    Description: The name of your AutoScalingGroup
+  LocalSG:
+    Type: String
+    Description: The security group ID of your local Security Group (sg-abcd1234)
+  RemoteSG:
+    Type: String
+    Description: The security group ID of your remote Security Group (sg-abcd1234)
+  RemoteRegion:
+    Type: String
+    Description: The region name of the remote region (us-west-2, us-east-1, etc.)
+  RemoteASG:
+    Type: String
+    Description: The name of your remote region AutoScalingGroup
+  RemoteTable:
+    Type: String
+    Description: The name of the remote DynamoDB Table
+Outputs:
+  DynamoTable:
+    Description: Name of the DynamoDB Table to copy in remote region stack
+    Value: !Ref DynamoDBTable
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      -
+        Label: 
+          default: "Local Resources"
+        Parameters: 
+          - LocalSG
+          - AutoScalingGroup
+      - 
+        Label: 
+          default: "Remote Resources"
+        Parameters: 
+          - RemoteSG
+          - RemoteRegion
+          - RemoteASG
+          - RemoteTable
+      - 
+        Label: 
+          default: "General Configuration"
+        Parameters: 
+          - CodeBucket
+          - CodeKey
+    ParameterLabels: 
+      LocalSG: 
+        default: "Local Security Group ID"
+      AutoScalingGroup:
+        default: "Local Auto Scaling Group Name"
+      RemoteSG:
+        default: "Remote Security Group ID"
+      RemoteRegion:
+        default: "Remote Region Name"
+      RemoteASG:
+        default: "Remote Auto Scaling Group Name"
+      RemoteTable:
+        default: "Remote DynamoDB Table Name"
+      CodeBucket:
+        default: "Code Zip S3 Bucket Name"
+      CodeKey:
+        default: "Code Zip S3 Object Key"
+Resources:
+  SGUpdater:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: auto_sg_updater.lambda_handler
+      Runtime: python2.7
+      Timeout: 300
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+             - autoscaling:CompleteLifecycleAction
+             - ec2:DescribeSecurityGroups
+             - ec2:AuthorizeSecurityGroupIngress
+             - ec2:RevokeSecurityGroupIngress
+             - ec2:DescribeInstances
+             - autoscaling:DescribeAutoScalingGroups
+             - dynamodb:UpdateItem
+             - dynamodb:GetItem
+            Resource: '*'
+      CodeUri: 
+        Bucket: !Ref CodeBucket
+        Key: !Ref CodeKey
+      Environment:
+        Variables:
+          local_table: !Ref DynamoDBTable
+          local_sg: !Ref LocalSG
+          local_region: !Ref AWS::Region
+          remote_table: !Ref RemoteTable
+          remote_region: !Ref RemoteRegion
+          remote_asg: !Ref RemoteASG
+          remote_sg: !Ref RemoteSG
+      Events:
+        Stream:
+          Type: CloudWatchEvent
+          Properties:
+            Pattern:
+              source:
+              - aws.autoscaling
+              detail-type:
+              - EC2 Instance-launch Lifecycle Action
+              - EC2 Instance-terminate Lifecycle Action
+              detail:
+                AutoScalingGroupName:
+                - !Ref AutoScalingGroup
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - AttributeName: region
+          AttributeType: S
+        - AttributeName: asg
+          AttributeType: S
+      KeySchema: 
+        - AttributeName: region
+          KeyType: HASH
+        - AttributeName: asg
+          KeyType: RANGE
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+  LaunchLifecycleHook:
+    Type: "AWS::AutoScaling::LifecycleHook"
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      LifecycleTransition: autoscaling:EC2_INSTANCE_LAUNCHING
+  TerminateLifecycleHook:
+    Type: "AWS::AutoScaling::LifecycleHook"
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
