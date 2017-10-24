@@ -4,11 +4,11 @@ Parameters:
   CodeBucket:
     Type: String
     Description: Bucket name where code is located
-    Default: isco-ohio
+    Default: computeblog-us-east-1
   CodeKey:
     Type: String
     Description: Key name (including all prefixes) of code zip
-    Default: auto-sg-updater.zip
+    Default: automate-sg-lambda/auto-sg-updater.zip
   AutoScalingGroup:
     Type: String
     Description: The name of your AutoScalingGroup
@@ -50,7 +50,7 @@ Metadata:
           - RemoteTable
       - 
         Label: 
-          default: "General Configuration"
+          default: "General Configuration - Change these when launching in remote region!"
         Parameters: 
           - CodeBucket
           - CodeKey
